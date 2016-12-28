@@ -46,7 +46,6 @@ public class MainActivity
     private static final String FILE_NAME = "testing_gdrive";
     private static final int RC_SIGN_IN = 9001;
 
-    private GoogleSignInOptions gso;
     private GoogleApiClient mGoogleApiClient;
     private TextView mStatusTextView;
     private EditText mEditText;
@@ -59,9 +58,11 @@ public class MainActivity
         mStatusTextView = (TextView) findViewById(R.id.status);
         mEditText = (EditText) findViewById(R.id.writing_text);
 
-        gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestScopes(new Scope(Scopes.DRIVE_APPFOLDER)) // if you want to save files in hidden app folder
-//                .requestScopes(Drive.SCOPE_FILE,new Scope(Scopes.DRIVE_FILE)) //// if you want to save files in root folder
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+// if you want to save files in hidden app folder
+                .requestScopes(Drive.SCOPE_FILE,Drive.SCOPE_APPFOLDER)
+// if you want to save files in root folder
+//                .requestScopes(Drive.SCOPE_FILE,new Scope(Scopes.DRIVE_FILE))
                 .requestEmail()
                 .build();
 
@@ -99,14 +100,6 @@ public class MainActivity
                 }
             });
         }
-    }
-
-    @Override
-    protected void onPause() {
-        if (mGoogleApiClient != null) {
-            mGoogleApiClient.disconnect();
-        }
-        super.onPause();
     }
 
     @Override
@@ -179,7 +172,7 @@ public class MainActivity
 
                         DriveContents contents = driveContentsResult.getDriveContents();
                         BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(contents.getInputStream()));
-                        StringBuilder builder = new StringBuilder();
+                        StringBuffer builder = new StringBuffer();
                         String line;
                         try {
                             while ((line = bufferedReader.readLine()) != null) {
@@ -187,68 +180,66 @@ public class MainActivity
                             }
                         } catch (IOException e) {
                             e.printStackTrace();
+                        } finally {
+                            if (bufferedReader != null) {
+                                try {
+                                    bufferedReader.close();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
                         }
 
                         String contentAsString = builder.toString();
                         mEditText.setText("from file: " + contentAsString);
+                        Log.d(TAG, "message from file: " + contentAsString);
 
                         //                        contents.commit(mGoogleApiClient,null);
                     }
                 });
     }
 
-    private void sendDataToGDrive() {
+   private void sendDataToGDrive() {
         Drive.DriveApi.newDriveContents(mGoogleApiClient)
                 .setResultCallback(new ResultCallback<DriveApi.DriveContentsResult>() {
                     @Override
                     public void onResult(DriveApi.DriveContentsResult driveContentsResult) {
                         if (!driveContentsResult.getStatus().isSuccess()) {
-                            Log.d(TAG,"error while trying to create new file contents");
-                            return;
+                            Log.d(TAG, "Error while trying to create new file contents\n"
+                                    + driveContentsResult.getStatus().getStatusMessage());
                         }
-                        final ResultCallback<DriveFolder.DriveFileResult>fileCallback = new
-                                ResultCallback<DriveFolder.DriveFileResult>() {
+                        DriveContents driveContents = driveContentsResult.getDriveContents();
+                        OutputStream outputStream = driveContents.getOutputStream();
+                        String s = mEditText.getText().toString();
+                        Log.d(TAG, "Text to write: " + s);
+                        try {
+                            outputStream.write(s.getBytes());
+                            outputStream.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        MetadataChangeSet metadata =
+                                new MetadataChangeSet.Builder()
+                                        .setTitle(FILE_NAME)
+                                        .setMimeType("text/plain")
+                                        .build();
+                        Drive.DriveApi.getAppFolder(mGoogleApiClient)
+                                .createFile(mGoogleApiClient, metadata, driveContents)
+                                .setResultCallback(new ResultCallback<DriveFolder.DriveFileResult>() {
                                     @Override
-                                    public void onResult(DriveFolder.DriveFileResult result) {
-                                        if (result.getStatus().isSuccess()) {
-                                            Toast.makeText(getApplicationContext(),
-                                                    "File created: " + result.getDriveFile().getDriveId(),
-                                                    Toast.LENGTH_SHORT).show();
+                                    public void onResult(DriveFolder.DriveFileResult driveFileResult) {
+                                        if (!driveFileResult.getStatus().isSuccess()) {
+                                            Log.d(TAG, "Error while trying to create new file");
+                                            Log.d(TAG, driveFileResult.getStatus().getStatusMessage());
+                                        }else{
+                                            Log.d(TAG, "File created:\t" + driveFileResult.getDriveFile().toString());
                                         }
                                     }
-                                };
+                                });
 
-                        final DriveContents driveContents = driveContentsResult.getDriveContents();
-                        new Thread(){
-                            @Override
-                            public void run(){
-                                OutputStream os = driveContents.getOutputStream();
-                                Writer wr = new OutputStreamWriter(os);
-                                String s = mEditText.getText().toString() + "\t" + new Random(100);
-                                try {
-                                    wr.write(s);
-                                    wr.close();
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
-
-                                MetadataChangeSet metadata =
-                                        new MetadataChangeSet.Builder()
-                                                .setTitle(FILE_NAME)
-                                                .setMimeType("text/plain")
-                                                .setStarred(true)
-                                                .build();
-                                // getAppFolder means hidden app folder
-                                // getRootFolder means root gdrive's folder
-                                Drive.DriveApi.getAppFolder(mGoogleApiClient)
-                                        .createFile(mGoogleApiClient,metadata,driveContents)
-                                        .setResultCallback(fileCallback);
-
-                            }
-                        }.start();
                     }
                 });
-    }
+        }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
