@@ -19,3 +19,11 @@ a file we are going to look in for specific file.
 Later, I queryChildren of that folder, which result in list of found files. 
 Get Id of that file (we know, that there is one file), and I pass this Id to method which opens file
 with given Id and read its content.
+
+
+DON'T FORGET TO:
+- add google sign-in service to your app https://developers.google.com/mobile/add
+- register your app in console.developers.google.com, turn on drive api
+- apply plugin: 'com.google.gms.google-services' in app/build.gradle
+- classpath 'com.google.gms:google-services:1.5.0-beta2' in dependencies in project/build.gradle
+
